@@ -9,9 +9,9 @@
 - **P0 端云探针**：Mate 60 Pro 与华为云空间的测试记录双向同步、重启持久化已验证；双设备验收待完成。
 - **P2 阅读闭环已实现**：RSS / Atom / JSON Feed、网页订阅发现、文件夹、OPML 导入导出、未读/全部/今天/星标筛选、本地搜索、正文阅读、字号调节、原文与系统分享入口。
 - **必要本地数据层**：订阅/文件夹/已读/星标与文章缓存分库；刷新不覆盖阅读状态，抓取失败保留已有内容。
-- **未完成**：真实订阅的云同步、账号隔离及冲突处理、平板布局验收，以及手机正文/分享/文件选择的完整交互验收。P0 探针成功不代表业务数据已经同步。
+- **未完成**：真实订阅的云同步、账号隔离及冲突处理、平板布局验收，以及断网阅读/失败恢复和本轮真实 Atom 公网复验。P0 探针成功不代表业务数据已经同步。
 
-当前手机已安装 P2 开发构建并确认启动页正常。2026-10-17 的原生测试为 **11/11 通过**：8 项解析/OPML/持久化测试，以及少数派 RSS、阮一峰 Atom、JSON Feed 官方源的网络测试。后两者验证 HTTP 304；P0 状态测试另有 **4/4 通过**。公网源可能变化，历史通过不保证未来每次请求成功。
+当前手机已安装 P2 修复构建。2026-10-18 已通过正文/字号、状态筛选/搜索、重启持久化、文件夹、OPML、原文/分享与 RSS/JSON Feed 网页发现的真机交互检查；修复了正文空白、OPML 分段读取、HTTP 重定向及摘要标点问题。最终本地/重定向原生测试 **11/11 通过**；独立公网复验 **3/4 通过**，阮一峰 Atom 连续超时，不能视为全量通过。P0 状态测试 **4/4 通过**。详细范围与未完成项见 [P2_ACCEPTANCE.md](P2_ACCEPTANCE.md)。
 
 ## 开发环境与启动
 
@@ -43,7 +43,7 @@ hvigorw --mode module -p product=default -p module=entry@ohosTest assembleHap --
 ```sh
 hdc install entry/build/default/outputs/default/entry-default-signed.hap
 hdc install entry/build/default/outputs/ohosTest/entry-ohosTest-signed.hap
-hdc shell aa test -b com.apexracing.rssreader -m entry_test -s unittest OpenHarmonyTestRunner -s class ReaderP2,ReaderNetwork -s timeout 60000
+hdc shell aa test -b com.apexracing.rssreader -m entry_test -s unittest OpenHarmonyTestRunner -s class ReaderP2,ReaderFiles,ReaderRedirect,ReaderNetwork -s timeout 60000
 node --test tests/sync-status.test.mjs
 ```
 

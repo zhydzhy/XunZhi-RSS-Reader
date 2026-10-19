@@ -32,10 +32,20 @@ function header(headers: Record<string, string>, key: string): string {
   const match = Object.keys(headers).find((k: string) => k.toLowerCase() === key);
   return match ? String(headers[match]) : '';
 }
+class StopRedirect implements http.HttpInterceptor {
+  interceptorType: http.InterceptorType = http.InterceptorType.REDIRECTION;
+  async interceptorHandle(_request: http.HttpRequestContext, _response: http.HttpResponse): Promise<boolean> {
+    // Return the redirect response so the caller can validate and follow Location.
+    return false;
+  }
+}
 export async function fetchFeed(address: string, etag: string = '', modified: string = ''): Promise<FetchResult> {
   let current = resolveHttp(address);
   for (let redirects = 0; redirects <= 5; redirects++) {
     const client = http.createHttp();
+    const chain = new http.HttpInterceptorChain();
+    chain.addChain([new StopRedirect()]);
+    chain.apply(client);
     const headers: Record<string, string> = { 'Accept': 'application/atom+xml, application/rss+xml, application/feed+json, application/xml, text/xml, text/html;q=0.5',
       'User-Agent': 'Xunzhi/0.2 (HarmonyOS RSS Reader)' };
     if (etag) headers['If-None-Match'] = etag;
@@ -43,7 +53,7 @@ export async function fetchFeed(address: string, etag: string = '', modified: st
     try {
       const response = await client.request(current, { method: http.RequestMethod.GET, header: headers,
         expectDataType: http.HttpDataType.ARRAY_BUFFER, maxLimit: MAX_SOURCE, connectTimeout: 12000,
-        readTimeout: 20000, usingCache: false, maxRedirects: 0 });
+        readTimeout: 20000, usingCache: false });
       const responseHeaders = response.header as Record<string, string>;
       if ([301, 302, 303, 307, 308].includes(response.responseCode)) {
         const next = resolveHttp(header(responseHeaders, 'location'), current);

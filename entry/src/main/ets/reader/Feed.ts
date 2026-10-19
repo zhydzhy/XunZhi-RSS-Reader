@@ -56,7 +56,11 @@ export function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 export function textOnly(value: string): string {
+  const punctuation: Record<string, string> = { lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
+    ndash: '–', mdash: '—', hellip: '…', nbsp: ' ' };
   return value.replace(/<[^>]*>/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&(lsquo|rsquo|ldquo|rdquo|ndash|mdash|hellip|nbsp);/g,
+      (_entity: string, name: string): string => punctuation[name])
     .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ').trim();
 }

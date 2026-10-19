@@ -1,14 +1,34 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { abilityDelegatorRegistry } from '@kit.TestKit';
 import { relationalStore } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
+import { fileIo } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
 import { makeParser, resolveHttp, discoverFeeds, fetchFeed } from '../../../main/ets/reader/NativeFeed';
-import { exportOpml, readerHtml, Feed, Subscription } from '../../../main/ets/reader/Feed';
+import { exportOpml, readerHtml, textOnly, Feed, Subscription } from '../../../main/ets/reader/Feed';
 import { ReaderStore } from '../../../main/ets/reader/ReaderStore';
+import { readOpmlFile } from '../../../main/ets/reader/ReaderFiles';
 import { rss, atom, json, opml, malformed, dtd } from './Fixtures';
 
 function rejects(action: () => void): boolean { try { action(); return false; } catch (_) { return true; } }
+let nativeContext: common.UIAbilityContext | undefined;
+async function testContext(): Promise<common.UIAbilityContext> {
+  if (nativeContext) return nativeContext;
+  const delegator = abilityDelegatorRegistry.getAbilityDelegator();
+  const monitor: abilityDelegatorRegistry.AbilityMonitor = { abilityName: 'EntryAbility' };
+  await delegator.addAbilityMonitor(monitor);
+  try {
+    await delegator.startAbility({ bundleName: 'com.apexracing.rssreader', abilityName: 'EntryAbility' });
+    nativeContext = (await delegator.waitAbilityMonitor(monitor, 5000)).context;
+    return nativeContext;
+  } finally { await delegator.removeAbilityMonitor(monitor); }
+}
 export default function readerTest() {
   describe('ReaderP2', () => {
+    it('preview_decodes_typographic_entities_once', 0, () => {
+      expect(textOnly('<p>We&rsquo;ve&nbsp;updated &ldquo;JSON&rdquo;&hellip;</p>')).assertEqual('We’ve updated “JSON”…');
+      expect(textOnly('&amp;rsquo;')).assertEqual('&rsquo;');
+    });
     it('rss_cdata_namespace_unicode_dedup', 0, () => {
       const feed = makeParser().parse(rss, 'https://example.org/feed');
       expect(feed.title).assertEqual('测试 & News'); expect(feed.articles.length).assertEqual(1);
@@ -54,13 +74,7 @@ export default function readerTest() {
       expect(html).assertContain("form-action 'none'");
     });
     it('rdb_refresh_state_persistence_and_subscription_dedup', 0, async () => {
-      const delegator = abilityDelegatorRegistry.getAbilityDelegator();
-      const monitor: abilityDelegatorRegistry.AbilityMonitor = { abilityName: 'EntryAbility' };
-      await delegator.addAbilityMonitor(monitor);
-      await delegator.startAbility({ bundleName: 'com.apexracing.rssreader', abilityName: 'EntryAbility' });
-      const ability = await delegator.waitAbilityMonitor(monitor, 5000);
-      await delegator.removeAbilityMonitor(monitor);
-      const context = ability.context;
+      const context = await testContext();
       const user = 'p2_validation_user.db'; const cache = 'p2_validation_cache.db';
       try { await relationalStore.deleteRdbStore(context, user); } catch (_) {}
       try { await relationalStore.deleteRdbStore(context, cache); } catch (_) {}
@@ -86,6 +100,34 @@ export default function readerTest() {
         await store.removeFeed(feed.id); expect((await store.subscriptions()).length).assertEqual(0);
         await store.saveSubscriptions(subscriptions); rows = await store.articles([feed.id]); expect(rows[0].starred).assertTrue();
       } finally { await store.close(); await relationalStore.deleteRdbStore(context, user); await relationalStore.deleteRdbStore(context, cache); }
+    });
+  });
+  describe('ReaderFiles', () => {
+    it('opml_multichunk_utf8_read', 0, async () => {
+      const context = await testContext();
+      const path = `${context.cacheDir}/p2-validation-${Date.now()}.opml`;
+      const source = opml.replace('<body>', '<body><!--' + '中英 & text '.repeat(20000) + '-->');
+      const bytes = new util.TextEncoder().encodeInto(source);
+      const output = await fileIo.open(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      try { expect(await fileIo.write(output.fd, bytes.buffer as ArrayBuffer)).assertEqual(bytes.length); }
+      finally { await fileIo.close(output); }
+      const input = await fileIo.open(path, fileIo.OpenMode.READ_ONLY);
+      try {
+        const actual = await readOpmlFile(input.fd);
+        expect(actual).assertEqual(source);
+        expect(makeParser().importOpml(actual).length).assertEqual(2);
+      } finally { await fileIo.close(input); await fileIo.unlink(path); }
+    });
+  });
+  describe('ReaderRedirect', () => {
+    it('redirected_website_discovery_and_feed', 0, async () => {
+      const website = await fetchFeed('https://jsonfeed.org/');
+      expect(website.url).assertEqual('https://www.jsonfeed.org/');
+      const candidates = discoverFeeds(website.source, website.url);
+      expect(candidates.includes('https://www.jsonfeed.org/feed.json')).assertTrue();
+      const result = await fetchFeed(candidates.find((candidate: string) => candidate.endsWith('/feed.json'))!);
+      expect(result.url).assertEqual('https://www.jsonfeed.org/feed.json');
+      expect(makeParser().parse(result.source, 'https://jsonfeed.org/feed.json', result.url).articles.length > 0).assertTrue();
     });
   });
   describe('ReaderNetwork', () => {

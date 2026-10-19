@@ -210,7 +210,7 @@ struct Index {
       Column({ space: 16 }) {
         Text('订阅资料库').fontSize(24).fontWeight(FontWeight.Bold)
         TextInput({ text: this.address, placeholder: '网站或 RSS / Atom / JSON Feed 地址' }).type(InputType.URL)
-          .onChange((value: string) => { this.address = value; })
+          .onChange((value: string) => { this.address = value; this.candidates = []; })
         Row({ space: 8 }) {
           Button('添加').enabled(this.ready && !this.busy && !!this.address.trim()).onClick(() => { this.run(async () => this.add(this.address)); })
           Button('导入 OPML').enabled(this.ready && !this.busy).onClick(() => { this.run(async () => this.importOpml()); })
@@ -277,13 +277,13 @@ struct Index {
       Row({ space: 8 }) {
         Button('返回').enabled(!this.busy).onClick(() => { this.run(async () => this.closeArticle()); })
         Text(this.article ? this.feedTitle(this.article.feedId) : '').layoutWeight(1).maxLines(1).fontSize(14)
-        Button('A−').accessibilityText('缩小字号').onClick(() => { this.fontSize = Math.max(14, this.fontSize - 2); if (this.article) this.web.loadData(readerHtml(this.article, this.fontSize), 'text/html', 'UTF-8'); })
-        Button('A+').accessibilityText('放大字号').onClick(() => { this.fontSize = Math.min(30, this.fontSize + 2); if (this.article) this.web.loadData(readerHtml(this.article, this.fontSize), 'text/html', 'UTF-8'); })
+        Button('A−').accessibilityText('缩小字号').onClick(() => { this.fontSize = Math.max(14, this.fontSize - 2); if (this.article) this.web.loadData(encodeURIComponent(readerHtml(this.article, this.fontSize)), 'text/html', 'UTF-8'); })
+        Button('A+').accessibilityText('放大字号').onClick(() => { this.fontSize = Math.min(30, this.fontSize + 2); if (this.article) this.web.loadData(encodeURIComponent(readerHtml(this.article, this.fontSize)), 'text/html', 'UTF-8'); })
       }.padding(12).width('100%')
       if (this.message) { Text(this.message).fontSize(13).padding(12).width('100%') }
       Web({ src: '', controller: this.web }).javaScriptAccess(false).fileAccess(false).domStorageAccess(false)
         .mixedMode(MixedMode.None).onlineImageAccess(true).layoutWeight(1).width('100%')
-        .onControllerAttached(() => { if (this.article) this.web.loadData(readerHtml(this.article, this.fontSize), 'text/html', 'UTF-8'); })
+        .onControllerAttached(() => { if (this.article) this.web.loadData(encodeURIComponent(readerHtml(this.article, this.fontSize)), 'text/html', 'UTF-8'); })
         .onOverrideUrlLoading(() => true)
         .onPageEnd(() => { this.run(async () => this.markRead()); })
       Row({ space: 8 }) {
