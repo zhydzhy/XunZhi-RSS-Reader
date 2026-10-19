@@ -1,0 +1,36 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+/.local-signing/
+
+# Local signing and service credentials. Copy the example for a fresh checkout.
+/build-profile.json5
+**/agconnect-services.json
+*.p7b
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.pem
+*.key
+*.cer
+.env
+.env.*
+!*.example
+.DS_Store
+**/oh_modules/
+**/node_modules/
+*.hap
+*.app
+
+# Local AGC/device evidence may contain account or device identifiers.
+/p0-*.png
