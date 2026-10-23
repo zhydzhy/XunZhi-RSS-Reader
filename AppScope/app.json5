@@ -6,7 +6,8 @@
     "versionCode": 1000000,
     "versionName": "1.0.0",
     "buildVersion": "1",
-    "icon": "$media:layered_image",
+    "configuration": "$profile:configuration",
+    "icon": "$media:xunzhi_icon",
     "label": "$string:app_name"
   }
 }

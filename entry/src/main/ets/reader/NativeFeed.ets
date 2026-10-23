@@ -1,6 +1,6 @@
 import { convertxml, util, url, xml } from '@kit.ArkTS';
 import { http } from '@kit.NetworkKit';
-import { Feed, FeedParser, XmlNode, MAX_SOURCE, guardSource, ResolveUrl } from './Feed';
+import { Feed, FeedParser, XmlNode, MAX_SOURCE, guardSource, ResolveUrl, decodeHtmlEntities } from './Feed';
 
 export function resolveHttp(value: string, base: string = ''): string {
   const parsed = base ? new url.URL(value.trim(), base) : new url.URL(value.trim());
@@ -39,21 +39,30 @@ class StopRedirect implements http.HttpInterceptor {
     return false;
   }
 }
-export async function fetchFeed(address: string, etag: string = '', modified: string = ''): Promise<FetchResult> {
+export interface ResourceResult { data: ArrayBuffer; url: string; type: string; etag: string; modified: string; unchanged: boolean; }
+export async function fetchResource(address: string, accept: string, limit: number,
+  etag: string = '', modified: string = '', registerCancel?: (cancel?: () => void) => void): Promise<ResourceResult> {
   let current = resolveHttp(address);
+  let cancelled = false;
   for (let redirects = 0; redirects <= 5; redirects++) {
+    if (cancelled) throw new Error('Request cancelled');
     const client = http.createHttp();
+    let destroyed = false;
+    const destroy = (): void => { if (!destroyed) { destroyed = true; client.destroy(); } };
     const chain = new http.HttpInterceptorChain();
     chain.addChain([new StopRedirect()]);
     chain.apply(client);
-    const headers: Record<string, string> = { 'Accept': 'application/atom+xml, application/rss+xml, application/feed+json, application/xml, text/xml, text/html;q=0.5',
+    const headers: Record<string, string> = { 'Accept': accept,
       'User-Agent': 'Xunzhi/0.2 (HarmonyOS RSS Reader)' };
     if (etag) headers['If-None-Match'] = etag;
     if (modified) headers['If-Modified-Since'] = modified;
     try {
+      registerCancel?.(() => { cancelled = true; destroy(); });
+      if (cancelled) throw new Error('Request cancelled');
       const response = await client.request(current, { method: http.RequestMethod.GET, header: headers,
-        expectDataType: http.HttpDataType.ARRAY_BUFFER, maxLimit: MAX_SOURCE, connectTimeout: 12000,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER, maxLimit: limit, connectTimeout: 12000,
         readTimeout: 20000, usingCache: false });
+      if (cancelled) throw new Error('Request cancelled');
       const responseHeaders = response.header as Record<string, string>;
       if ([301, 302, 303, 307, 308].includes(response.responseCode)) {
         const next = resolveHttp(header(responseHeaders, 'location'), current);
@@ -61,37 +70,49 @@ export async function fetchFeed(address: string, etag: string = '', modified: st
         current = next;
         continue;
       }
-      if (response.responseCode === 304) return { source: '', url: current, etag, modified, unchanged: true };
+      if (response.responseCode === 304) return { data: new ArrayBuffer(0), url: current, type: '', etag, modified, unchanged: true };
       if (response.responseCode !== 200) throw new Error(`源站返回 HTTP ${response.responseCode}`);
-      const data = new Uint8Array(response.result as ArrayBuffer);
-      if (data.length > MAX_SOURCE) throw new Error('响应超过 4 MB');
+      const data = response.result as ArrayBuffer;
+      if (data.byteLength > limit) throw new Error('响应超过大小限制');
       const type = header(responseHeaders, 'content-type');
-      const prefix = new util.TextDecoder('utf-8').decodeToString(data.slice(0, 200));
-      const encoding = /charset\s*=\s*["']?([\w-]+)/i.exec(type)?.[1] ||
-        /<\?xml[^>]*encoding\s*=\s*["']([^"']+)/i.exec(prefix)?.[1] || 'utf-8';
-      return { source: new util.TextDecoder(encoding).decodeToString(data), url: current,
+      return { data, type, url: current,
         etag: header(responseHeaders, 'etag'), modified: header(responseHeaders, 'last-modified'), unchanged: false };
-    } finally { client.destroy(); }
+    } finally { registerCancel?.(undefined); destroy(); }
   }
   throw new Error('重定向次数超过 5 次');
 }
-export function discoverFeeds(html: string, base: string, resolve: ResolveUrl = resolveHttp): string[] {
+export async function fetchFeed(address: string, etag: string = '', modified: string = '',
+  registerCancel?: (cancel?: () => void) => void): Promise<FetchResult> {
+  const response = await fetchResource(address,
+    'application/atom+xml, application/rss+xml, application/feed+json, application/xml, text/xml, text/html;q=0.5',
+    MAX_SOURCE, etag, modified, registerCancel);
+  const data = new Uint8Array(response.data);
+  const prefix = new util.TextDecoder('utf-8').decodeToString(data.slice(0, 200));
+  const encoding = /charset\s*=\s*["']?([\w-]+)/i.exec(response.type)?.[1] ||
+    /<\?xml[^>]*encoding\s*=\s*["']([^"']+)/i.exec(prefix)?.[1] || 'utf-8';
+  return { source: new util.TextDecoder(encoding).decodeToString(data), url: response.url,
+    etag: response.etag, modified: response.modified, unchanged: response.unchanged };
+}
+export function discoverFeeds(html: string, base: string, resolve: ResolveUrl = resolveHttp, titles?: Map<string, string>): string[] {
   const result: string[] = [];
   const clean = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script\b[\s\S]*?<\/script\s*>/gi, '');
   const baseTag = /<base\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/i.exec(clean);
   let documentBase = base;
-  if (baseTag) { try { documentBase = resolve(baseTag[1], base); } catch (_) {} }
+  if (baseTag) { try { documentBase = resolve(decodeHtmlEntities(baseTag[1]), base); } catch (_) {} }
   const tags = clean.match(/<link\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi) ?? [];
   for (const tag of tags) {
     const attrs: Record<string, string> = {};
     const pattern = /([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
     let match = pattern.exec(tag);
-    while (match) { attrs[match[1].toLowerCase()] = (match[2] ?? match[3] ?? match[4]).replace(/&amp;/g, '&'); match = pattern.exec(tag); }
+    while (match) { attrs[match[1].toLowerCase()] = decodeHtmlEntities(match[2] ?? match[3] ?? match[4]); match = pattern.exec(tag); }
     if (!(attrs['rel'] ?? '').toLowerCase().split(/\s+/).includes('alternate') ||
       !['application/rss+xml', 'application/atom+xml', 'application/feed+json', 'application/json'].includes((attrs['type'] ?? '').toLowerCase())) continue;
     try {
       const target = resolve(attrs['href'] ?? '', documentBase);
-      if (attrs['href'] && !result.includes(target)) result.push(target);
+      if (attrs['href'] && !result.includes(target)) {
+        result.push(target);
+        if (attrs['title']) titles?.set(target, attrs['title']);
+      }
     } catch (_) {}
   }
   return result;

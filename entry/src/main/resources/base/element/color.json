@@ -1,8 +1,44 @@
 {
   "color": [
     {
+      "name": "reader_selection",
+      "value": "#EAF2ED"
+    },
+    {
+      "name": "reader_chrome_mask",
+      "value": "#CCFCFCFB"
+    },
+    {
+      "name": "reader_background",
+      "value": "#FCFCFB"
+    },
+    {
       "name": "start_window_background",
       "value": "#FFFFFF"
+    },
+    {
+      "name": "reader_accent",
+      "value": "#245C48"
+    },
+    {
+      "name": "reader_on_accent",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "reader_canvas",
+      "value": "#F4F5F3"
+    },
+    {
+      "name": "reader_star",
+      "value": "#976000"
+    },
+    {
+      "name": "reader_error",
+      "value": "#B13A32"
+    },
+    {
+      "name": "reader_surface",
+      "value": "#FCFCFB"
     }
   ]
 }
